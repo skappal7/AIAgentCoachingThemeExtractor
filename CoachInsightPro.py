@@ -3,11 +3,18 @@ import pandas as pd
 import requests
 import json
 import io
-import chardet
 from typing import List, Dict, Any
 import time
 import re
 from datetime import datetime
+
+# Try to import chardet, fallback if not available
+try:
+    import chardet
+    CHARDET_AVAILABLE = True
+except ImportError:
+    CHARDET_AVAILABLE = False
+    st.warning("chardet library not available. Using UTF-8 as default encoding.")
 
 # Page configuration
 st.set_page_config(
@@ -89,9 +96,20 @@ API_URL = "https://openrouter.ai/api/v1/chat/completions"
 MODEL = "moonshotai/kimi-k2:free"
 
 def detect_encoding(file_content: bytes) -> str:
-    """Detect file encoding using chardet"""
-    result = chardet.detect(file_content)
-    return result['encoding'] or 'utf-8'
+    """Detect file encoding using chardet if available, otherwise use common encodings"""
+    if CHARDET_AVAILABLE:
+        result = chardet.detect(file_content)
+        return result['encoding'] or 'utf-8'
+    else:
+        # Fallback: try common encodings
+        encodings_to_try = ['utf-8', 'utf-8-sig', 'latin1', 'cp1252', 'iso-8859-1']
+        for encoding in encodings_to_try:
+            try:
+                file_content.decode(encoding)
+                return encoding
+            except UnicodeDecodeError:
+                continue
+        return 'utf-8'  # Final fallback
 
 def read_file_with_encoding(uploaded_file) -> pd.DataFrame:
     """Read uploaded file with proper encoding detection"""
@@ -101,12 +119,19 @@ def read_file_with_encoding(uploaded_file) -> pd.DataFrame:
         
         if uploaded_file.name.endswith('.csv'):
             encoding = detect_encoding(file_content)
-            df = pd.read_csv(io.BytesIO(file_content), encoding=encoding, encoding_errors='replace')
+            try:
+                df = pd.read_csv(io.BytesIO(file_content), encoding=encoding)
+            except UnicodeDecodeError:
+                # Fallback to utf-8 with error handling
+                df = pd.read_csv(io.BytesIO(file_content), encoding='utf-8', errors='replace')
         elif uploaded_file.name.endswith(('.xlsx', '.xls')):
             df = pd.read_excel(io.BytesIO(file_content))
         elif uploaded_file.name.endswith('.txt'):
             encoding = detect_encoding(file_content)
-            content = file_content.decode(encoding, errors='replace')
+            try:
+                content = file_content.decode(encoding)
+            except UnicodeDecodeError:
+                content = file_content.decode('utf-8', errors='replace')
             # Convert text file to dataframe with each line as a row
             lines = [line.strip() for line in content.split('\n') if line.strip()]
             df = pd.DataFrame({'feedback': lines})
