@@ -146,6 +146,11 @@ def read_file_with_encoding(uploaded_file) -> pd.DataFrame:
 
 def call_ai_model(prompt: str, max_retries: int = 3) -> str:
     """Call the AI model with retry logic"""
+    # Validate API key format
+    if not API_KEY or not API_KEY.startswith('sk-or-v1-'):
+        st.error("❌ Invalid API key format! OpenRouter keys should start with 'sk-or-v1-'")
+        return None
+        
     for attempt in range(max_retries):
         try:
             headers = {
@@ -178,22 +183,41 @@ def call_ai_model(prompt: str, max_retries: int = 3) -> str:
             if response.status_code == 200:
                 result = response.json()
                 return result['choices'][0]['message']['content']
+            elif response.status_code == 401:
+                st.error("🚨 **Authentication Error (401)**: Invalid API key or account not found.")
+                st.error("Please check:")
+                st.error("• API key is correct and valid")
+                st.error("• Account exists on OpenRouter")
+                st.error("• API key has proper permissions")
+                st.info("💡 **How to get a valid API key:**")
+                st.info("1. Go to https://openrouter.ai/")
+                st.info("2. Sign up or log in")
+                st.info("3. Go to API Keys section")
+                st.info("4. Generate a new API key")
+                return None
             elif response.status_code == 429:
                 wait_time = 2 ** attempt
                 st.warning(f"Rate limit hit. Waiting {wait_time} seconds before retry...")
                 time.sleep(wait_time)
                 continue
+            elif response.status_code == 403:
+                st.error("🚨 **Access Forbidden (403)**: Model access denied.")
+                st.error("This could mean:")
+                st.error("• The free tier limit has been reached")
+                st.error("• Model access is restricted")
+                st.error("• Account verification required")
+                return None
             else:
-                st.error(f"API Error: {response.status_code} - {response.text}")
+                st.error(f"🚨 **API Error {response.status_code}**: {response.text}")
                 return None
                 
         except requests.exceptions.Timeout:
-            st.warning(f"Request timeout. Attempt {attempt + 1}/{max_retries}")
+            st.warning(f"⏱️ Request timeout. Attempt {attempt + 1}/{max_retries}")
             if attempt < max_retries - 1:
                 time.sleep(2)
                 continue
         except Exception as e:
-            st.error(f"Error calling AI model: {str(e)}")
+            st.error(f"❌ Error calling AI model: {str(e)}")
             return None
     
     return None
@@ -274,6 +298,38 @@ def main():
     
     # Sidebar
     with st.sidebar:
+        st.markdown("### 🔑 API Configuration")
+        
+        # API Key input
+        api_key_input = st.text_input(
+            "OpenRouter API Key",
+            value="",
+            type="password",
+            help="Enter your OpenRouter API key (starts with sk-or-v1-)"
+        )
+        
+        if api_key_input:
+            global API_KEY
+            API_KEY = api_key_input
+            st.success("✅ API Key configured!")
+        elif not API_KEY or API_KEY == "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":
+            st.warning("⚠️ Please enter your OpenRouter API key")
+            st.info("Get your free API key at: https://openrouter.ai/")
+        
+        # Test API connection
+        if st.button("🧪 Test API Connection"):
+            if API_KEY and API_KEY.startswith('sk-or-v1-'):
+                with st.spinner("Testing API connection..."):
+                    test_result = call_ai_model("Hello, please respond with 'API connection successful'")
+                    if test_result:
+                        st.success("✅ API connection successful!")
+                    else:
+                        st.error("❌ API connection failed!")
+            else:
+                st.error("❌ Invalid API key format!")
+        
+        st.markdown("---")
+        
         st.markdown("### 📊 Analysis Dashboard")
         st.markdown("---")
         
